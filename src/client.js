@@ -1,0 +1,136 @@
+// Create a WebSocket connection to the server
+const socket = new WebSocket(
+  `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`
+);
+
+const term = new Terminal({ cursorBlink: true });
+let hasStartedCopyProgress = false;
+
+// Show messages (success or error)
+const showMessage = (text, type = 'info') => {
+  const container = document.getElementById('progress-bar-container');
+  if (!container) return;
+
+  const existingMessage = document.getElementById('status-message');
+  if (existingMessage) existingMessage.remove();
+
+  const msg = document.createElement('div');
+  msg.id = 'status-message';
+  msg.textContent = text;
+  msg.style.cssText = `
+    position: relative;
+    top: 10px;
+    padding: 10px;
+    border-radius: 6px;
+    margin-top: 10px;
+    font-weight: bold;
+    max-width: 1000px;
+    text-align: center;
+    transition: opacity 0.5s ease-in-out;
+    opacity: 1;
+    background-color: ${type === 'error' ? '#ff4c4c' : '#4caf50'};
+    color: #fff;
+  `;
+
+  container.appendChild(msg);
+
+  setTimeout(() => {
+    msg.style.opacity = '0';
+    setTimeout(() => msg.remove(), 1000);
+  }, 3000);
+};
+
+// Terminal initialization
+const initTerminal = () => {
+  if (term._initialized) return;
+  term._initialized = true;
+  term.open(document.getElementById('terminal'));
+
+  term.onKey(({ key }) => socket.send(key));
+
+  // Handle clipboard paste
+  term.attachCustomKeyEventHandler((e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+      navigator.clipboard.readText()
+        .then((text) => socket.send(text))
+        .catch(() => showMessage('Clipboard access denied.', 'error'));
+      return false;
+    }
+    return true;
+  });
+};
+
+// Trigger file copy process
+const startCopy = () => {
+  const username = document.getElementById('username')?.value;
+  const password = document.getElementById('password')?.value;
+  const ipAddress = document.getElementById('ipAddress')?.value;
+  const sourcePath = document.getElementById('sourcePath')?.value;
+
+  if (!username || !password || !ipAddress || !sourcePath) {
+    showMessage('All fields are required.', 'error');
+    return;
+  }
+
+  hasStartedCopyProgress = false;
+  updateProgressBar(0);
+
+  socket.send(JSON.stringify({
+    action: 'startCopy',
+    username,
+    password,
+    ipAddress,
+    sourcePath,
+  }));
+};
+
+// Update visual progress bar
+const updateProgressBar = (progress) => {
+  const percent = Math.max(0, Math.min(progress, 100));
+  const bar = document.getElementById('progress');
+  if (bar) bar.style.width = `${percent}%`;
+
+  if (!hasStartedCopyProgress && percent > 0) {
+    hasStartedCopyProgress = true;
+    showMessage('Copy started...', 'info');
+  }
+};
+
+// Handle WebSocket messages
+const handleWebSocketMessage = ({ data }) => {
+  try {
+    const msg = JSON.parse(data);
+
+    switch (msg.action) {
+      case 'progress':
+        updateProgressBar(msg.progress);
+        break;
+      case 'done':
+        showMessage('All files and folders copied successfully!');
+        break;
+      case 'debug':
+        term.writeln(`\r\n$ ${msg.message}`);
+        break;
+      case 'terminal':
+        term.write(msg.output);
+        break;
+      default:
+        console.error(`Unknown action: ${msg.action}`);
+    }
+  } catch (error) {
+    console.error('Failed to parse WebSocket message:', data);
+    term.write(data); // Show raw if parsing fails
+  }
+};
+
+// WebSocket events
+socket.onopen = initTerminal;
+socket.onmessage = handleWebSocketMessage;
+socket.onerror = (err) => {
+  console.error('WebSocket error:', err);
+  showMessage('WebSocket connection error.', 'error');
+};
+socket.onclose = () => {
+  term.writeln('\r\nDisconnected from server.\r\n');
+  showMessage('Disconnected from server.', 'error');
+};
