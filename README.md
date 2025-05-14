@@ -1,4 +1,4 @@
-# 🧭 web-based command line emulator
+# 🧭 web-based command line emulator + Remote file exchange tool
 
 A real-time, cross-platform web terminal with file copy support, built using Node.js, WebSockets, and `node-pty`. This server allows users to interact with a shell via a web UI and copy files/folders between paths through the browser.
 
@@ -33,8 +33,8 @@ Ensure the following are installed on your system:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/ronakbediya310/web-based-terminal-emulator.git
-cd web-based-terminal-emulator
+git clone https://github.com/ronakbediya310/VPS-File-copier.git
+cd VPS-File-copier
 ```
 
 ## 2. Install Dependencies
