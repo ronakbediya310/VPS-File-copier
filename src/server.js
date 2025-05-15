@@ -106,6 +106,7 @@ const restoreFromBackup = ({ ipAddress, username, password, targetPath }, ws) =>
   const cleanIp = sanitizeArg(ipAddress);
   const cleanTargetPath = sanitizeArg(targetPath);
 
+  // Step 1: List all available backup folders on the backup VPS
   const listBackupsCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "ls -d /home/${DEST_USER}/backup_*"`;
 
   ws.send(JSON.stringify({ action: 'terminal', output: `\n$ ${listBackupsCommand}\n` }));
@@ -137,14 +138,15 @@ const restoreFromBackup = ({ ipAddress, username, password, targetPath }, ws) =>
       ws.send(JSON.stringify({ action: 'progress', progress: Math.floor((currentIndex / backupFolders.length) * 100) }));
       ws.send(JSON.stringify({ action: 'terminal', output: `\nRestoring folder: ${folderName}\n` }));
 
-      const remoteRsyncCommand =
-        `rsync -avz -e "ssh -o StrictHostKeyChecking=no" ${folder}/ ${cleanUsername}@${cleanIp}:${cleanTargetPath}/`;
+      // Build rsync command to be executed FROM BACKUP VPS TO TARGET VPS
+      const rsyncCommand = `rsync -avz -e "sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no" ${folder}/ ${cleanUsername}@${cleanIp}:${cleanTargetPath}/`;
 
-      const fullCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} '${remoteRsyncCommand}'`;
+      // Wrap it in SSH command to run remotely
+      const remoteExecCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "${rsyncCommand}"`;
 
-      ws.send(JSON.stringify({ action: 'terminal', output: `$ ${fullCommand}\n` }));
+      ws.send(JSON.stringify({ action: 'terminal', output: `$ ${remoteExecCommand}\n` }));
 
-      const proc = exec(fullCommand);
+      const proc = exec(remoteExecCommand);
 
       proc.stdout.on('data', (data) => {
         ws.send(JSON.stringify({ action: 'terminal', output: data }));
