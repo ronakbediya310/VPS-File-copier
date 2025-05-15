@@ -100,15 +100,11 @@ function copyFromSourceVPSToLocal({ username, password, ipAddress, sourcePath },
   });
 }
 
-// Restore function with sshpass and two-step copy
-function restoreFromBackup({ ipAddress, username, password, targetPath }, ws) {
+const restoreFromBackup = ({ ipAddress, username, password, targetPath }, ws) => {
   const cleanUsername = sanitizeArg(username);
   const cleanPassword = sanitizeArg(password);
   const cleanIp = sanitizeArg(ipAddress);
   const cleanTargetPath = sanitizeArg(targetPath);
-
-  const tempLocalPath = `/tmp/restore_temp_${Date.now()}`; // Temporary local folder
-  fs.mkdirSync(tempLocalPath, { recursive: true });
 
   const listBackupsCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "ls -d /home/${DEST_USER}/backup_*"`;
 
@@ -116,13 +112,13 @@ function restoreFromBackup({ ipAddress, username, password, targetPath }, ws) {
 
   exec(listBackupsCommand, (err, stdout) => {
     if (err) {
-      ws.send(JSON.stringify({ action: 'error', message: 'Failed to list backup folders on destination VPS.' }));
+      ws.send(JSON.stringify({ action: 'error', message: 'Failed to list backup folders on backup VPS.' }));
       return;
     }
 
     const backupFolders = stdout.trim().split('\n').filter(Boolean);
     if (backupFolders.length === 0) {
-      ws.send(JSON.stringify({ action: 'error', message: 'No backup folders found on destination VPS.' }));
+      ws.send(JSON.stringify({ action: 'error', message: 'No backup folders found.' }));
       return;
     }
 
@@ -132,47 +128,46 @@ function restoreFromBackup({ ipAddress, username, password, targetPath }, ws) {
       if (currentIndex >= backupFolders.length) {
         ws.send(JSON.stringify({ action: 'progress', progress: 100 }));
         ws.send(JSON.stringify({ action: 'done', message: 'Restoration completed successfully!' }));
-        fs.rmSync(tempLocalPath, { recursive: true, force: true }); // Clean up temp folder
         return;
       }
 
       const folder = backupFolders[currentIndex];
       const folderName = folder.split('/').pop();
-      const localFolderPath = path.join(tempLocalPath, folderName);
 
       ws.send(JSON.stringify({ action: 'progress', progress: Math.floor((currentIndex / backupFolders.length) * 100) }));
       ws.send(JSON.stringify({ action: 'terminal', output: `\nRestoring folder: ${folderName}\n` }));
 
-      // Step 1: Download to local
-      const pullCommand = `sshpass -p '${DEST_PASSWORD}' scp -r -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP}:${folder}/ ${localFolderPath}`;
-      ws.send(JSON.stringify({ action: 'terminal', output: `$ ${pullCommand}\n` }));
+      const remoteRsyncCommand =
+        `rsync -avz -e "ssh -o StrictHostKeyChecking=no" ${folder}/ ${cleanUsername}@${cleanIp}:${cleanTargetPath}/`;
 
-      exec(pullCommand, (pullErr) => {
-        if (pullErr) {
-          ws.send(JSON.stringify({ action: 'error', message: `Failed to pull folder ${folderName} from source VPS.` }));
-          return;
-        }
+      const fullCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} '${remoteRsyncCommand}'`;
 
-        // Step 2: Upload to target VPS
-        const pushCommand = `sshpass -p '${cleanPassword}' scp -r -o StrictHostKeyChecking=no ${localFolderPath}/ ${cleanUsername}@${cleanIp}:${cleanTargetPath}/`;
-        ws.send(JSON.stringify({ action: 'terminal', output: `$ ${pushCommand}\n` }));
+      ws.send(JSON.stringify({ action: 'terminal', output: `$ ${fullCommand}\n` }));
 
-        exec(pushCommand, (pushErr) => {
-          if (pushErr) {
-            ws.send(JSON.stringify({ action: 'error', message: `Failed to push folder ${folderName} to destination VPS.` }));
-            return;
-          }
+      const proc = exec(fullCommand);
 
+      proc.stdout.on('data', (data) => {
+        ws.send(JSON.stringify({ action: 'terminal', output: data }));
+      });
+
+      proc.stderr.on('data', (data) => {
+        ws.send(JSON.stringify({ action: 'terminal', output: data }));
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
           ws.send(JSON.stringify({ action: 'terminal', output: `Folder ${folderName} restored successfully.\n` }));
           currentIndex++;
           restoreNext();
-        });
+        } else {
+          ws.send(JSON.stringify({ action: 'error', message: `Restore failed for folder ${folderName} with exit code ${code}` }));
+        }
       });
     }
 
     restoreNext();
   });
-}
+};
 
 // HTTP server, websocket setup, heartbeat, handlers — same as before
 
