@@ -84,6 +84,30 @@ const startCopy = () => {
   }));
 };
 
+// Trigger restoration process
+const startRestore = () => {
+  const restoreIP = document.getElementById('restoreIpAddress')?.value;
+  const restoreUser = document.getElementById('restoreUsername')?.value;
+  const restorePass = document.getElementById('restorePassword')?.value;
+  const restorePath = document.getElementById('restorePath')?.value;
+
+  if (!restoreIP || !restoreUser || !restorePass || !restorePath) {
+    showMessage('All restoration fields are required.', 'error');
+    return;
+  }
+
+  hasStartedCopyProgress = false;
+  updateProgressBar(0);
+
+  socket.send(JSON.stringify({
+    action: 'startRestore',
+    ipAddress: restoreIP,
+    username: restoreUser,
+    password: restorePass,
+    targetPath: restorePath,
+  }));
+};
+
 // Update visual progress bar
 const updateProgressBar = (progress) => {
   const percent = Math.max(0, Math.min(progress, 100));
@@ -92,7 +116,7 @@ const updateProgressBar = (progress) => {
 
   if (!hasStartedCopyProgress && percent > 0) {
     hasStartedCopyProgress = true;
-    showMessage('Copy started...', 'info');
+    showMessage('Operation started...', 'info');
   }
 };
 
@@ -106,13 +130,16 @@ const handleWebSocketMessage = ({ data }) => {
         updateProgressBar(msg.progress);
         break;
       case 'done':
-        showMessage('All files and folders copied successfully!');
+        showMessage('Operation completed successfully!');
         break;
       case 'debug':
         term.writeln(`\r\n$ ${msg.message}`);
         break;
       case 'terminal':
         term.write(msg.output);
+        break;
+      case 'error':
+        showMessage(msg.message || 'An error occurred.', 'error');
         break;
       default:
         console.error(`Unknown action: ${msg.action}`);

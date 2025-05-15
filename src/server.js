@@ -3,11 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { exec } from 'child_process';
+import { spawn, exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import os from 'os';
 import dotenv from 'dotenv';
-import { handleTerminalConnection, setSharedTerminalMode } from './terminal.js';
+import { handleTerminalConnection } from './terminal.js';
 
 dotenv.config();
 
@@ -16,7 +16,6 @@ const __dirname = path.dirname(__filename);
 const PORT = 6060;
 const wss = new WebSocketServer({ noServer: true });
 
-//constants
 const DEST_USER = process.env.DEST_USER;
 const DEST_IP = process.env.DEST_IP;
 const DEST_PASSWORD = process.env.DEST_PASSWORD;
@@ -26,44 +25,67 @@ if (!DEST_USER || !DEST_IP || !DEST_PASSWORD) {
   process.exit(1);
 }
 
-// Helper function
-function sanitizePath(p) {
-  return os.platform() === 'win32' ? p : p.replace(/(["\s'$`\\])/g, '\\$1');
+function sanitizeArg(arg) {
+  if (typeof arg !== 'string') return '';
+  return arg.replace(/(["\s'$`\\])/g, '\\$1');
 }
 
+function startHeartbeat(ws) {
+  ws._lastPong = Date.now();
+
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === ws.OPEN) ws.ping();
+  }, 30000);
+
+  const checkTimeout = setInterval(() => {
+    if (Date.now() - ws._lastPong > 60000) ws.terminate();
+  }, 10000);
+
+  ws.on('pong', () => {
+    ws._lastPong = Date.now();
+  });
+
+  ws.on('close', () => {
+    clearInterval(pingInterval);
+    clearInterval(checkTimeout);
+  });
+}
+
+// Copy function with sshpass password usage
 function copyFromSourceVPSToLocal({ username, password, ipAddress, sourcePath }, ws) {
+  const cleanUsername = sanitizeArg(username);
+  const cleanPassword = sanitizeArg(password);
+  const cleanIp = sanitizeArg(ipAddress);
+  const cleanSourcePath = sanitizeArg(sourcePath);
+
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupDir = `backup_${timestamp}`;
   const remoteFolder = `/home/${DEST_USER}/${backupDir}`;
 
   const mkdirCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "mkdir -p ${remoteFolder}"`;
 
-  const rsyncCommand = `sshpass -p '${password}' ssh -o StrictHostKeyChecking=no ${username}@${ipAddress} "sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${sourcePath}/ ${DEST_USER}@${DEST_IP}:${remoteFolder}/"`;
-
-  // Step 1: Create destination backup folder
   ws.send(JSON.stringify({ action: 'terminal', output: `\n$ ${mkdirCommand}\n` }));
 
-  exec(mkdirCommand, (mkdirErr) => {
-    if (mkdirErr) {
-      console.error('[DEST MKDIR ERROR]', mkdirErr);
+  exec(mkdirCommand, (err) => {
+    if (err) {
       ws.send(JSON.stringify({ action: 'error', message: 'Failed to create backup folder on destination VPS.' }));
       return;
     }
-
     ws.send(JSON.stringify({ action: 'progress', progress: 10 }));
 
-    // Step 2: Show rsync command before executing
-    ws.send(JSON.stringify({ action: 'terminal', output: `\n$ ${rsyncCommand}\n` }));
+    // rsync command with nested sshpass for source and destination passwords
+    const rsyncCommand = `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} ` +
+      `"sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${remoteFolder}/"`;
+
+    ws.send(JSON.stringify({ action: 'terminal', output: `$ ${rsyncCommand}\n` }));
 
     const proc = exec(rsyncCommand);
 
     proc.stdout.on('data', (data) => {
-      console.log('[Rsync STDOUT]', data);
       ws.send(JSON.stringify({ action: 'terminal', output: data }));
     });
 
     proc.stderr.on('data', (data) => {
-      console.error('[Rsync STDERR]', data);
       ws.send(JSON.stringify({ action: 'terminal', output: data }));
     });
 
@@ -78,26 +100,76 @@ function copyFromSourceVPSToLocal({ username, password, ipAddress, sourcePath },
   });
 }
 
+// Restore function with sshpass
+function restoreFromBackup({ ipAddress, username, password, targetPath }, ws) {
+  const cleanUsername = sanitizeArg(username);
+  const cleanPassword = sanitizeArg(password);
+  const cleanIp = sanitizeArg(ipAddress);
+  const cleanTargetPath = sanitizeArg(targetPath);
 
-// Heartbeat to keep socket alive
-function startHeartbeat(ws) {
-  const interval = setInterval(() => ws.ping(), 30000);
-  const timeout = setInterval(() => {
-    if (Date.now() - ws._lastPong > 60000) {
-      console.log('No pong received, closing connection.');
-      ws.close();
+  const listBackupsCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "ls -d /home/${DEST_USER}/backup_*"`;
+
+  ws.send(JSON.stringify({ action: 'terminal', output: `\n$ ${listBackupsCommand}\n` }));
+
+  exec(listBackupsCommand, (err, stdout) => {
+    if (err) {
+      ws.send(JSON.stringify({ action: 'error', message: 'Failed to list backup folders on destination VPS.' }));
+      return;
     }
-  }, 5000);
 
-  ws._lastPong = Date.now();
-  ws.on('pong', () => ws._lastPong = Date.now());
-  ws.on('close', () => {
-    clearInterval(interval);
-    clearInterval(timeout);
+    const backupFolders = stdout.trim().split('\n').filter(Boolean);
+    if (backupFolders.length === 0) {
+      ws.send(JSON.stringify({ action: 'error', message: 'No backup folders found on destination VPS.' }));
+      return;
+    }
+
+    let currentIndex = 0;
+
+    function restoreNext() {
+      if (currentIndex >= backupFolders.length) {
+        ws.send(JSON.stringify({ action: 'progress', progress: 100 }));
+        ws.send(JSON.stringify({ action: 'done', message: 'Restoration completed successfully!' }));
+        return;
+      }
+
+      const folder = backupFolders[currentIndex];
+      const folderName = folder.split('/').pop();
+
+      ws.send(JSON.stringify({ action: 'progress', progress: Math.floor((currentIndex / backupFolders.length) * 100) }));
+      ws.send(JSON.stringify({ action: 'terminal', output: `\nRestoring folder: ${folderName}\n` }));
+
+      const rsyncCommand = `sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ` +
+        `${DEST_USER}@${DEST_IP}:${folder}/ ${cleanUsername}@${cleanIp}:${cleanTargetPath}/`;
+
+      ws.send(JSON.stringify({ action: 'terminal', output: `$ ${rsyncCommand}\n` }));
+
+      const proc = exec(rsyncCommand);
+
+      proc.stdout.on('data', (data) => {
+        ws.send(JSON.stringify({ action: 'terminal', output: data }));
+      });
+
+      proc.stderr.on('data', (data) => {
+        ws.send(JSON.stringify({ action: 'terminal', output: data }));
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          ws.send(JSON.stringify({ action: 'terminal', output: `Folder ${folderName} restored successfully.\n` }));
+          currentIndex++;
+          restoreNext();
+        } else {
+          ws.send(JSON.stringify({ action: 'error', message: `Restore failed for folder ${folderName} with exit code ${code}` }));
+        }
+      });
+    }
+
+    restoreNext();
   });
 }
 
-// Static file server
+// HTTP server, websocket setup, heartbeat, handlers — same as before
+
 const server = http.createServer((req, res) => {
   if (req.method !== 'GET') {
     res.writeHead(405);
@@ -131,7 +203,6 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// WebSocket connection handler
 wss.on('connection', (ws) => {
   startHeartbeat(ws);
   handleTerminalConnection(ws);
@@ -139,24 +210,28 @@ wss.on('connection', (ws) => {
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
-      if (data.action === 'startCopy') {
-        copyFromSourceVPSToLocal(data, ws);
+      switch (data.action) {
+        case 'startCopy':
+          copyFromSourceVPSToLocal(data, ws);
+          break;
+        case 'startRestore':
+          restoreFromBackup(data, ws);
+          break;
+        default:
+          ws.send(JSON.stringify({ action: 'error', message: 'Unknown action.' }));
       }
-    } catch (err) {
-      console.error('[JSON Parse Error]', err);
-      ws.send(JSON.stringify({ action: 'error', message: 'Invalid JSON message.' }));
+    } catch {
+      ws.send(JSON.stringify({ action: 'error', message: 'Invalid JSON format.' }));
     }
   });
 });
 
-// Upgrade HTTP to WebSocket
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req);
   });
 });
 
-// Start HTTP server
 server.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
 });

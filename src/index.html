@@ -3,13 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VPS File Copier</title>
+  <title>VPS Backup & Restore</title>
 
-  <!-- Xterm.js CSS -->
-  <link
-    rel="stylesheet"
-    href="https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css"
-  />
+  <!-- Xterm.js -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css" />
   <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
 
   <style>
@@ -39,8 +36,16 @@
     }
 
     h1 {
-      margin-bottom: 20px;
       color: var(--primary);
+      margin-bottom: 5px;
+      font-size: 2rem;
+    }
+
+    h2 {
+      margin: 30px 0 10px;
+      color: var(--primary);
+      font-size: 1.3rem;
+      text-align: center;
     }
 
     #terminal {
@@ -60,7 +65,7 @@
     }
 
     .form-container {
-      margin-top: 20px;
+      margin-top: 10px;
       width: 100%;
       max-width: 1000px;
       background: var(--card);
@@ -105,7 +110,7 @@
       max-width: 1000px;
       margin-top: 20px;
       background: var(--card);
-      padding: 15px;
+      padding: 20px;
       border-radius: 10px;
       text-align: center;
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
@@ -129,6 +134,8 @@
 
     #status-message {
       animation: fadeIn 0.3s ease-in;
+      color: var(--muted);
+      font-size: 0.95rem;
     }
 
     @keyframes fadeIn {
@@ -156,23 +163,39 @@
 </head>
 
 <body>
-  <h1>VPS File Copier</h1>
+  <h1>VPS Backup & Restore Utility</h1>
 
+  <!-- Terminal Output -->
+  <h2>Live Terminal Output</h2>
   <div id="terminal" tabindex="0" aria-label="Terminal Output Area"></div>
 
+  <!-- Backup Section -->
+  <h2>📦 Backup VPS Files</h2>
   <div class="form-container">
     <input type="text" id="username" placeholder="Source VPS Username" autocomplete="off" aria-label="Source VPS Username" />
     <input type="password" id="password" placeholder="Source VPS Password" autocomplete="off" aria-label="Source VPS Password" />
     <input type="text" id="ipAddress" placeholder="Source VPS IP Address" autocomplete="off" aria-label="Source VPS IP Address" />
     <input type="text" id="sourcePath" placeholder="Source Folder Path" autocomplete="off" aria-label="Source Folder Path" />
-    <button onclick="startCopy()" aria-label="Start File Copy">Copy Files</button>
+    <button onclick="startCopy()" aria-label="Start File Copy">Start Backup</button>
   </div>
 
+  <!-- Restore Section -->
+  <h2>♻️ Restore from Backup</h2>
+  <div class="form-container">
+    <input type="text" id="restoreIp" placeholder="Target Server IP Address" autocomplete="off" aria-label="Target Server IP Address" />
+    <input type="text" id="restoreUser" placeholder="Target Server Username" autocomplete="off" aria-label="Target Server Username" />
+    <input type="password" id="restorePassword" placeholder="Target Server Password" autocomplete="off" aria-label="Target Server Password" />
+    <input type="text" id="restorePath" placeholder="Restoration Path" autocomplete="off" aria-label="Restoration Path" />
+    <button onclick="startRestore()" aria-label="Start Restoration">Start Restore</button>
+  </div>
+
+  <!-- Progress Section -->
+  <h2>📊 Progress Monitor</h2>
   <div id="progress-bar-container">
     <div id="progress-bar">
       <div id="progress"></div>
     </div>
-    <!-- Status message injected dynamically -->
+    <div id="status-message">Awaiting operation...</div>
   </div>
 
   <script src="client.js"></script>
