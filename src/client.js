@@ -86,8 +86,8 @@ const startCopy = () => {
 
 // Trigger restoration process
 const startRestore = () => {
-  const restoreIP = document.getElementById('restoreIpAddress')?.value;
-  const restoreUser = document.getElementById('restoreUsername')?.value;
+  const restoreIP = document.getElementById('restoreIp')?.value;
+  const restoreUser = document.getElementById('restoreUser')?.value;
   const restorePass = document.getElementById('restorePassword')?.value;
   const restorePath = document.getElementById('restorePath')?.value;
 
