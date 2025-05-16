@@ -126,7 +126,11 @@ const retryBackup = () => {
   updateProgressBar(0);
 
   socket.send(JSON.stringify({
-    action: 'retry_backup'
+    action: 'retry_backup',
+    username,
+    password,
+    ipAddress,
+    sourcePath,
   }));
 };
 
