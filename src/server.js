@@ -99,14 +99,67 @@ function copyFromSourceVPSToLocal({ username, password, ipAddress, sourcePath },
     });
   });
 }
+function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
+  const cleanUsername = sanitizeArg(username);
+  const cleanPassword = sanitizeArg(password);
+  const cleanIp = sanitizeArg(ipAddress);
+  const cleanSourcePath = sanitizeArg(sourcePath);
 
-const restoreFromBackup = ({ ipAddress, username, password, targetPath }, ws) => {
+  const listCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "ls -dt /home/${DEST_USER}/backup_*"`;
+
+  ws.send(JSON.stringify({ action: 'terminal', output: `$ ${listCommand}\n` }));
+
+  exec(listCommand, (err, stdout) => {
+    if (err) {
+      ws.send(JSON.stringify({ action: 'error', message: 'Failed to list backups for retry.' }));
+      return;
+    }
+
+    const latestBackup = stdout.trim().split('\n')[0];
+    if (!latestBackup) {
+      ws.send(JSON.stringify({ action: 'error', message: 'No backup folders found for retry.' }));
+      return;
+    }
+
+    ws.send(JSON.stringify({ action: 'progress', progress: 10 }));
+    ws.send(JSON.stringify({ action: 'terminal', output: `Retrying backup into existing folder: ${latestBackup}\n` }));
+
+    // Rsync command to sync from source VPS into the existing latest backup folder on destination VPS
+    const rsyncCommand = 
+      `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} ` +
+      `"sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${latestBackup}/"`; 
+
+    ws.send(JSON.stringify({ action: 'terminal', output: `$ ${rsyncCommand}\n` }));
+
+    const proc = exec(rsyncCommand);
+
+    proc.stdout.on('data', (data) => {
+      ws.send(JSON.stringify({ action: 'terminal', output: data }));
+    });
+
+    proc.stderr.on('data', (data) => {
+      ws.send(JSON.stringify({ action: 'terminal', output: data }));
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        ws.send(JSON.stringify({ action: 'progress', progress: 100 }));
+        ws.send(JSON.stringify({ action: 'done', message: 'Retry backup completed successfully.' }));
+      } else {
+        ws.send(JSON.stringify({ action: 'error', message: `Retry backup failed with exit code ${code}` }));
+      }
+    });
+  });
+}
+
+
+// Restore all backups sequentially
+function restoreFromBackup({ ipAddress, username, password, targetPath }, ws) {
   const cleanUsername = sanitizeArg(username);
   const cleanPassword = sanitizeArg(password);
   const cleanIp = sanitizeArg(ipAddress);
   const cleanTargetPath = sanitizeArg(targetPath);
 
-  // Step 1: List all backup folders on backup VPS
   const listBackupsCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "ls -d /home/${DEST_USER}/backup_*"`;
 
   ws.send(JSON.stringify({ action: 'terminal', output: `\n$ ${listBackupsCommand}\n` }));
@@ -134,15 +187,17 @@ const restoreFromBackup = ({ ipAddress, username, password, targetPath }, ws) =>
 
       const folder = backupFolders[currentIndex];
       const folderName = folder.split('/').pop();
+      const progressPercent = Math.floor((currentIndex / backupFolders.length) * 100);
 
-      ws.send(JSON.stringify({ action: 'progress', progress: Math.floor((currentIndex / backupFolders.length) * 100) }));
+      ws.send(JSON.stringify({ action: 'progress', progress: progressPercent }));
       ws.send(JSON.stringify({ action: 'terminal', output: `\nRestoring folder: ${folderName}\n` }));
 
-      // Properly escape nested quotes for sshpass inside rsync -e
-      const rsyncCommand = `rsync -avz -e "sshpass -p '\\''${cleanPassword}'\\'' ssh -o StrictHostKeyChecking=no" ${folder}/ ${cleanUsername}@${cleanIp}:${cleanTargetPath}/`;
+      const rsyncCommand = 
+        `rsync -avz -e "sshpass -p '\\''${cleanPassword}'\\'' ssh -o StrictHostKeyChecking=no" ` +
+        `${folder}/ ${cleanUsername}@${cleanIp}:${cleanTargetPath}/`;
 
-      // Wrap rsync command to run remotely on backup VPS
-      const remoteExecCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} '${rsyncCommand}'`;
+      const remoteExecCommand = 
+        `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} '${rsyncCommand}'`;
 
       ws.send(JSON.stringify({ action: 'terminal', output: `$ ${remoteExecCommand}\n` }));
 
@@ -169,10 +224,65 @@ const restoreFromBackup = ({ ipAddress, username, password, targetPath }, ws) =>
 
     restoreNext();
   });
-};
+}
+
+// Retry latest restore (single folder)
+function retryLatestRestore({ ipAddress, username, password, targetPath }, ws) {
+  const cleanUsername = sanitizeArg(username);
+  const cleanPassword = sanitizeArg(password);
+  const cleanIp = sanitizeArg(ipAddress);
+  const cleanTargetPath = sanitizeArg(targetPath);
+
+  const listCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "ls -dt /home/${DEST_USER}/backup_*"`;
+
+  ws.send(JSON.stringify({ action: 'terminal', output: `$ ${listCommand}\n` }));
+
+  exec(listCommand, (err, stdout) => {
+    if (err) {
+      ws.send(JSON.stringify({ action: 'error', message: 'Failed to list backups on retry.' }));
+      return;
+    }
+
+    const latestBackup = stdout.trim().split('\n')[0];
+    if (!latestBackup) {
+      ws.send(JSON.stringify({ action: 'error', message: 'No backups available for restore.' }));
+      return;
+    }
+
+    ws.send(JSON.stringify({ action: 'progress', progress: 10 }));
+    ws.send(JSON.stringify({ action: 'terminal', output: `Retrying restore from: ${latestBackup}\n` }));
+
+    const rsyncCommand = 
+      `rsync -avz -e "sshpass -p '\\''${cleanPassword}'\\'' ssh -o StrictHostKeyChecking=no" ` +
+      `${latestBackup}/ ${cleanUsername}@${cleanIp}:${cleanTargetPath}/`;
+
+    const remoteExecCommand = 
+      `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} '${rsyncCommand}'`;
+
+    ws.send(JSON.stringify({ action: 'terminal', output: `$ ${remoteExecCommand}\n` }));
+
+    const proc = exec(remoteExecCommand);
+
+    proc.stdout.on('data', (data) => {
+      ws.send(JSON.stringify({ action: 'terminal', output: data }));
+    });
+
+    proc.stderr.on('data', (data) => {
+      ws.send(JSON.stringify({ action: 'terminal', output: data }));
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        ws.send(JSON.stringify({ action: 'progress', progress: 100 }));
+        ws.send(JSON.stringify({ action: 'done', message: 'Retry restore completed successfully.' }));
+      } else {
+        ws.send(JSON.stringify({ action: 'error', message: `Retry restore failed with exit code ${code}` }));
+      }
+    });
+  });
+}
 
 // HTTP server, websocket setup, heartbeat, handlers — same as before
-
 const server = http.createServer((req, res) => {
   if (req.method !== 'GET') {
     res.writeHead(405);
@@ -219,6 +329,12 @@ wss.on('connection', (ws) => {
           break;
         case 'startRestore':
           restoreFromBackup(data, ws);
+          break;
+        case 'retry_backup':
+          retryLatestBackup(ws);
+          break;
+        case 'retry_restore':
+          retryLatestRestore(data, ws);
           break;
         default:
           ws.send(JSON.stringify({ action: 'error', message: 'Unknown action.' }));

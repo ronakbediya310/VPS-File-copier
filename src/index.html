@@ -1,203 +1,262 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VPS Backup & Restore</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VPS Backup & Restore</title>
 
-  <!-- Xterm.js -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css" />
-  <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
+    <!-- Xterm.js -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
 
-  <style>
-    :root {
-      --primary: #4caf50;
-      --bg: #1e1e1e;
-      --card: #2e2e2e;
-      --border: #444;
-      --text: #ffffff;
-      --muted: #bbbbbb;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      padding: 2vh 1vw;
-      background: var(--bg);
-      font-family: 'Segoe UI', sans-serif;
-      color: var(--text);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100vh;
-    }
-
-    h1 {
-      color: var(--primary);
-      margin-bottom: 5px;
-      font-size: 2rem;
-    }
-
-    h2 {
-      margin: 30px 0 10px;
-      color: var(--primary);
-      font-size: 1.3rem;
-      text-align: center;
-    }
-
-    #terminal {
-      width: 100%;
-      max-width: 1200px;
-      height: 60vh;
-      background-color: #000;
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-      border-radius: 12px;
-      overflow: hidden;
-      outline: none;
-    }
-
-    .xterm {
-      font-family: "Courier New", Courier, monospace;
-      font-size: 14px;
-    }
-
-    .form-container {
-      margin-top: 10px;
-      width: 100%;
-      max-width: 1000px;
-      background: var(--card);
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-      display: flex;
-      flex-wrap: wrap;
-      gap: 15px;
-      justify-content: center;
-    }
-
-    .form-container input {
-      flex: 1 1 220px;
-      padding: 10px;
-      background: #1b1b1b;
-      color: white;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-    }
-
-    .form-container input::placeholder {
-      color: var(--muted);
-    }
-
-    .form-container button {
-      padding: 10px 20px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-
-    .form-container button:hover {
-      background: #43a047;
-    }
-
-    #progress-bar-container {
-      width: 100%;
-      max-width: 1000px;
-      margin-top: 20px;
-      background: var(--card);
-      padding: 20px;
-      border-radius: 10px;
-      text-align: center;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-    }
-
-    #progress-bar {
-      width: 100%;
-      background: var(--border);
-      border-radius: 10px;
-      height: 20px;
-      overflow: hidden;
-      margin-bottom: 10px;
-    }
-
-    #progress {
-      height: 100%;
-      background: linear-gradient(to right, #66bb6a, #43a047);
-      width: 0%;
-      transition: width 0.3s ease-in-out;
-    }
-
-    #status-message {
-      animation: fadeIn 0.3s ease-in;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
-
-    @keyframes fadeIn {
-      from {
-        transform: translateY(-10px);
-        opacity: 0;
+    <style>
+      :root {
+        --primary: #4caf50;
+        --bg: #1e1e1e;
+        --card: #2e2e2e;
+        --border: #444;
+        --text: #ffffff;
+        --muted: #bbbbbb;
       }
-      to {
-        transform: translateY(0);
-        opacity: 1;
-      }
-    }
 
-    @media (max-width: 768px) {
-      .form-container {
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 2vh 1vw;
+        background: var(--bg);
+        font-family: "Segoe UI", sans-serif;
+        color: var(--text);
+        display: flex;
         flex-direction: column;
-        align-items: stretch;
+        align-items: center;
+        min-height: 100vh;
+      }
+
+      h1 {
+        color: var(--primary);
+        margin-bottom: 5px;
+        font-size: 2rem;
+      }
+
+      h2 {
+        margin: 30px 0 10px;
+        color: var(--primary);
+        font-size: 1.3rem;
+        text-align: center;
       }
 
       #terminal {
-        height: 40vh;
+        width: 100%;
+        max-width: 1200px;
+        height: 60vh;
+        background-color: #000;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        border-radius: 12px;
+        overflow: hidden;
+        outline: none;
       }
-    }
-  </style>
-</head>
 
-<body>
-  <h1>VPS Backup & Restore Utility</h1>
+      .xterm {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 14px;
+      }
 
-  <!-- Terminal Output -->
-  <h2>Live Terminal Output</h2>
-  <div id="terminal" tabindex="0" aria-label="Terminal Output Area"></div>
+      .form-container {
+        margin-top: 10px;
+        width: 100%;
+        max-width: 1000px;
+        background: var(--card);
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        justify-content: center;
+      }
 
-  <!-- Backup Section -->
-  <h2>📦 Backup VPS Files</h2>
-  <div class="form-container">
-    <input type="text" id="username" placeholder="Source VPS Username" autocomplete="off" aria-label="Source VPS Username" />
-    <input type="password" id="password" placeholder="Source VPS Password" autocomplete="off" aria-label="Source VPS Password" />
-    <input type="text" id="ipAddress" placeholder="Source VPS IP Address" autocomplete="off" aria-label="Source VPS IP Address" />
-    <input type="text" id="sourcePath" placeholder="Source Folder Path" autocomplete="off" aria-label="Source Folder Path" />
-    <button onclick="startCopy()" aria-label="Start File Copy">Start Backup</button>
-  </div>
+      .form-container input {
+        flex: 1 1 220px;
+        padding: 10px;
+        background: #1b1b1b;
+        color: white;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
 
-  <!-- Restore Section -->
-  <h2>♻️ Restore from Backup</h2>
-  <div class="form-container">
-    <input type="text" id="restoreIp" placeholder="Target Server IP Address" autocomplete="off" aria-label="Target Server IP Address" />
-    <input type="text" id="restoreUser" placeholder="Target Server Username" autocomplete="off" aria-label="Target Server Username" />
-    <input type="password" id="restorePassword" placeholder="Target Server Password" autocomplete="off" aria-label="Target Server Password" />
-    <input type="text" id="restorePath" placeholder="Restoration Path" autocomplete="off" aria-label="Restoration Path" />
-    <button onclick="startRestore()" aria-label="Start Restoration">Start Restore</button>
-  </div>
+      .form-container input::placeholder {
+        color: var(--muted);
+      }
 
-  <!-- Progress Section -->
-  <h2>📊 Progress Monitor</h2>
-  <div id="progress-bar-container">
-    <div id="progress-bar">
-      <div id="progress"></div>
+      .form-container button {
+        padding: 10px 20px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      .form-container button:hover {
+        background: #43a047;
+      }
+
+      #progress-bar-container {
+        width: 100%;
+        max-width: 1000px;
+        margin-top: 20px;
+        background: var(--card);
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      }
+
+      #progress-bar {
+        width: 100%;
+        background: var(--border);
+        border-radius: 10px;
+        height: 20px;
+        overflow: hidden;
+        margin-bottom: 10px;
+      }
+
+      #progress {
+        height: 100%;
+        background: linear-gradient(to right, #66bb6a, #43a047);
+        width: 0%;
+        transition: width 0.3s ease-in-out;
+      }
+
+      #status-message {
+        animation: fadeIn 0.3s ease-in;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      @keyframes fadeIn {
+        from {
+          transform: translateY(-10px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .form-container {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        #terminal {
+          height: 40vh;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>VPS Backup & Restore Utility</h1>
+
+    <!-- Terminal Output -->
+    <h2>Live Terminal Output</h2>
+    <div id="terminal" tabindex="0" aria-label="Terminal Output Area"></div>
+
+    <!-- Backup Section -->
+    <h2>📦 Backup VPS Files</h2>
+    <div class="form-container">
+      <input
+        type="text"
+        id="username"
+        placeholder="Source VPS Username"
+        autocomplete="off"
+        aria-label="Source VPS Username"
+      />
+      <input
+        type="password"
+        id="password"
+        placeholder="Source VPS Password"
+        autocomplete="off"
+        aria-label="Source VPS Password"
+      />
+      <input
+        type="text"
+        id="ipAddress"
+        placeholder="Source VPS IP Address"
+        autocomplete="off"
+        aria-label="Source VPS IP Address"
+      />
+      <input
+        type="text"
+        id="sourcePath"
+        placeholder="Source Folder Path"
+        autocomplete="off"
+        aria-label="Source Folder Path"
+      />
+      <button onclick="startCopy()" aria-label="Start File Copy">
+        Start Backup
+      </button>
+      <button onclick="retryBackup()" aria-label="Retry File Copy">
+        Retry Backup
+      </button>
     </div>
-    <div id="status-message">Awaiting operation...</div>
-  </div>
+    <!-- Restore Section -->
+    <h2>♻️ Restore from Backup</h2>
+    <div class="form-container">
+      <input
+        type="text"
+        id="restoreIp"
+        placeholder="Target Server IP Address"
+        autocomplete="off"
+        aria-label="Target Server IP Address"
+      />
+      <input
+        type="text"
+        id="restoreUser"
+        placeholder="Target Server Username"
+        autocomplete="off"
+        aria-label="Target Server Username"
+      />
+      <input
+        type="password"
+        id="restorePassword"
+        placeholder="Target Server Password"
+        autocomplete="off"
+        aria-label="Target Server Password"
+      />
+      <input
+        type="text"
+        id="restorePath"
+        placeholder="Restoration Path"
+        autocomplete="off"
+        aria-label="Restoration Path"
+      />
+      <button onclick="startRestore()" aria-label="Start Restoration">
+        Start Restore
+      </button>
+      <button onclick="retryRestore()" aria-label="Retry Restoration">
+        Retry Restore
+      </button>
+    </div>
 
-  <script src="client.js"></script>
-</body>
+    <!-- Progress Section -->
+    <h2>📊 Progress Monitor</h2>
+    <div id="progress-bar-container">
+      <div id="progress-bar">
+        <div id="progress"></div>
+      </div>
+      <div id="status-message">Awaiting operation...</div>
+    </div>
+    <script src="client.js"></script>
+  </body>
 </html>

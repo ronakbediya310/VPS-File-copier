@@ -120,6 +120,40 @@ const updateProgressBar = (progress) => {
   }
 };
 
+// Retry Backup using latest backup_* folder
+const retryBackup = () => {
+  hasStartedCopyProgress = false;
+  updateProgressBar(0);
+
+  socket.send(JSON.stringify({
+    action: 'retry_backup'
+  }));
+};
+
+// Retry Restore using latest backup_* folder
+const retryRestore = () => {
+  const restoreIP = document.getElementById('restoreIp')?.value;
+  const restoreUser = document.getElementById('restoreUser')?.value;
+  const restorePass = document.getElementById('restorePassword')?.value;
+  const restorePath = document.getElementById('restorePath')?.value;
+
+  if (!restoreIP || !restoreUser || !restorePass || !restorePath) {
+    showMessage('All restoration fields are required for retry.', 'error');
+    return;
+  }
+
+  hasStartedCopyProgress = false;
+  updateProgressBar(0);
+
+  socket.send(JSON.stringify({
+    action: 'retry_restore',
+    ipAddress: restoreIP,
+    username: restoreUser,
+    password: restorePass,
+    targetPath: restorePath,
+  }));
+};
+
 // Handle WebSocket messages
 const handleWebSocketMessage = ({ data }) => {
   try {
@@ -132,9 +166,13 @@ const handleWebSocketMessage = ({ data }) => {
       case 'done':
         showMessage('Operation completed successfully!');
         break;
-      case 'debug':
-        term.writeln(`\r\n$ ${msg.message}`);
+      case 'debug': {
+        const timestamp = new Date().toLocaleTimeString();
+        const lines = msg.message.split('\n');
+        term.writeln(`\r\n\x1b[33m[DEBUG ${timestamp}]\x1b[0m`);
+        lines.forEach(line => term.writeln(`  ${line}`));
         break;
+      }
       case 'terminal':
         term.write(msg.output);
         break;
