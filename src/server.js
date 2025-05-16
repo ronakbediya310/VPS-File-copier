@@ -116,7 +116,7 @@ function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
     }
 
     const latestBackup = stdout.trim().split('\n')[0];
-    if (!latestBackup || latestBackup.length === 0) {
+    if (!latestBackup) {
       ws.send(JSON.stringify({ action: 'error', message: 'No backup folders found for retry.' }));
       return;
     }
@@ -150,6 +150,7 @@ function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
     });
   });
 }
+
 
 
 // Restore all backups sequentially
