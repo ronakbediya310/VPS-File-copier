@@ -122,6 +122,10 @@ const updateProgressBar = (progress) => {
 
 // Retry Backup using latest backup_* folder
 const retryBackup = () => {
+  const username = document.getElementById('username')?.value;
+  const password = document.getElementById('password')?.value;
+  const ipAddress = document.getElementById('ipAddress')?.value;
+  const sourcePath = document.getElementById('sourcePath')?.value;
   hasStartedCopyProgress = false;
   updateProgressBar(0);
 
