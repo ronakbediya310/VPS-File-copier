@@ -105,7 +105,7 @@ function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
   const cleanIp = sanitizeArg(ipAddress);
   const cleanSourcePath = sanitizeArg(sourcePath);
 
-  const listCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "ls -dt /home/${DEST_USER}/backup_*"`;
+  const listCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "ls -1 /home/${DEST_USER}/backup_* | sort -r"`;
 
   ws.send(JSON.stringify({ action: 'terminal', output: `$ ${listCommand}\n` }));
 
@@ -124,10 +124,9 @@ function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
     ws.send(JSON.stringify({ action: 'progress', progress: 10 }));
     ws.send(JSON.stringify({ action: 'terminal', output: `Retrying backup into existing folder: ${latestBackup}\n` }));
 
-    // Rsync command to sync from source VPS into the existing latest backup folder on destination VPS
-    const rsyncCommand = 
+    const rsyncCommand =
       `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} ` +
-      `"sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${latestBackup}/"`; 
+      `"sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${latestBackup}/"`;
 
     ws.send(JSON.stringify({ action: 'terminal', output: `$ ${rsyncCommand}\n` }));
 
@@ -151,6 +150,7 @@ function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
     });
   });
 }
+
 
 
 // Restore all backups sequentially
@@ -331,7 +331,7 @@ wss.on('connection', (ws) => {
           restoreFromBackup(data, ws);
           break;
         case 'retry_backup':
-          retryLatestBackup(ws);
+          retryLatestBackup(data,ws);
           break;
         case 'retry_restore':
           retryLatestRestore(data, ws);
