@@ -159,18 +159,19 @@ function copyFromSourceVPSToLocal(
 
     // Step 2: Build remote script logic
     let remoteScript = `
-          #!/bin/bash
-          set -e
-          SRC_DIR="${cleanSourcePath}"
-          TMP_BACKUP_DIR="/tmp/rsync_backup"
-          BACKUP_DATE=$(date +%F_%H-%M-%S)
-          ZIP_NAME="backup_${timestamp}.zip"
-          ZIP_PATH="/tmp/$ZIP_NAME"
-          REMOTE_BACKUP_DIR="${remoteFolder}"
-          LINK_DEST="${TMP_BACKUP_DIR}/backup_last"
+#!/bin/bash
+set -e
 
-          mkdir -p "$TMP_BACKUP_DIR/${timestamp}"
-          `;
+SRC_DIR="${cleanSourcePath}"
+TMP_BACKUP_DIR="/tmp/rsync_backup"
+BACKUP_DATE=$(date +%F_%H-%M-%S)
+ZIP_NAME="backup_${timestamp}.zip"
+ZIP_PATH="/tmp/$ZIP_NAME"
+REMOTE_BACKUP_DIR="${remoteFolder}"
+LINK_DEST="$TMP_BACKUP_DIR/backup_last"
+
+mkdir -p "$TMP_BACKUP_DIR/${timestamp}"
+`;
 
     if (incrementalBackup) {
       remoteScript += `
@@ -242,7 +243,14 @@ END_SCRIPT`;
 }
 
 function retryLatestBackup(
-  { username, password, ipAddress, sourcePath, zipBeforeBackup, incrementalBackup },
+  {
+    username,
+    password,
+    ipAddress,
+    sourcePath,
+    zipBeforeBackup,
+    incrementalBackup,
+  },
   ws
 ) {
   const cleanUsername = sanitizeArg(username);
@@ -267,7 +275,10 @@ function retryLatestBackup(
     }
 
     const latestBackup = stdout.trim().split("\n")[0];
-    if (!latestBackup || !latestBackup.startsWith(`/home/${DEST_USER}/backup_`)) {
+    if (
+      !latestBackup ||
+      !latestBackup.startsWith(`/home/${DEST_USER}/backup_`)
+    ) {
       ws.send(
         JSON.stringify({
           action: "error",
@@ -286,7 +297,9 @@ function retryLatestBackup(
     );
 
     // Build options
-    const linkDestOption = incrementalBackup ? `--link-dest=${latestBackup}` : "";
+    const linkDestOption = incrementalBackup
+      ? `--link-dest=${latestBackup}`
+      : "";
     const tempZip = `/tmp/retry_${Date.now()}.zip`;
 
     let rsyncPart = `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} "rsync -a --delete ${linkDestOption} ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${latestBackup}/"`;
@@ -297,7 +310,9 @@ function retryLatestBackup(
 
     const rsyncCommand = rsyncPart;
 
-    ws.send(JSON.stringify({ action: "terminal", output: `$ ${rsyncCommand}\n` }));
+    ws.send(
+      JSON.stringify({ action: "terminal", output: `$ ${rsyncCommand}\n` })
+    );
 
     const proc = exec(rsyncCommand);
 
@@ -329,7 +344,6 @@ function retryLatestBackup(
     });
   });
 }
-
 
 // Restore all backups sequentially
 function restoreFromBackup({ ipAddress, username, password, targetPath }, ws) {
