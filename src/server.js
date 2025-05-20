@@ -51,9 +51,81 @@ function startHeartbeat(ws) {
   });
 }
 
-// Copy function with sshpass password usage
+// // Copy function with sshpass password usage
+// function copyFromSourceVPSToLocal(
+//   { username, password, ipAddress, sourcePath },
+//   ws
+// ) {
+//   const cleanUsername = sanitizeArg(username);
+//   const cleanPassword = sanitizeArg(password);
+//   const cleanIp = sanitizeArg(ipAddress);
+//   const cleanSourcePath = sanitizeArg(sourcePath);
+
+//   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+//   const backupDir = `backup_${timestamp}`;
+//   const remoteFolder = `/home/${DEST_USER}/${backupDir}`;
+
+//   const mkdirCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "mkdir -p ${remoteFolder}"`;
+
+//   ws.send(
+//     JSON.stringify({ action: "terminal", output: `\n$ ${mkdirCommand}\n` })
+//   );
+
+//   exec(mkdirCommand, (err) => {
+//     if (err) {
+//       ws.send(
+//         JSON.stringify({
+//           action: "error",
+//           message: "Failed to create backup folder on destination VPS.",
+//         })
+//       );
+//       return;
+//     }
+//     ws.send(JSON.stringify({ action: "progress", progress: 10 }));
+
+//     // rsync command with nested sshpass for source and destination passwords
+//     const rsyncCommand =
+//       `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} ` +
+//       `"sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${remoteFolder}/"`;
+
+//     ws.send(
+//       JSON.stringify({ action: "terminal", output: `$ ${rsyncCommand}\n` })
+//     );
+
+//     const proc = exec(rsyncCommand);
+
+//     proc.stdout.on("data", (data) => {
+//       ws.send(JSON.stringify({ action: "terminal", output: data }));
+//     });
+
+//     proc.stderr.on("data", (data) => {
+//       ws.send(JSON.stringify({ action: "terminal", output: data }));
+//     });
+
+//     proc.on("close", (code) => {
+//       if (code === 0) {
+//         ws.send(JSON.stringify({ action: "progress", progress: 100 }));
+//         ws.send(JSON.stringify({ action: "done", folder: backupDir }));
+//       } else {
+//         ws.send(
+//           JSON.stringify({
+//             action: "error",
+//             message: `Rsync failed with exit code ${code}`,
+//           })
+//         );
+//       }
+//     });
+//   });
+// }
 function copyFromSourceVPSToLocal(
-  { username, password, ipAddress, sourcePath },
+  {
+    username,
+    password,
+    ipAddress,
+    sourcePath,
+    zipBeforeBackup,
+    incrementalBackup,
+  },
   ws
 ) {
   const cleanUsername = sanitizeArg(username);
@@ -65,6 +137,7 @@ function copyFromSourceVPSToLocal(
   const backupDir = `backup_${timestamp}`;
   const remoteFolder = `/home/${DEST_USER}/${backupDir}`;
 
+  // Step 1: Create remote backup directory
   const mkdirCommand = `sshpass -p '${DEST_PASSWORD}' ssh -o StrictHostKeyChecking=no ${DEST_USER}@${DEST_IP} "mkdir -p ${remoteFolder}"`;
 
   ws.send(
@@ -81,18 +154,68 @@ function copyFromSourceVPSToLocal(
       );
       return;
     }
+
     ws.send(JSON.stringify({ action: "progress", progress: 10 }));
 
-    // rsync command with nested sshpass for source and destination passwords
-    const rsyncCommand =
-      `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} ` +
-      `"sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${remoteFolder}/"`;
+    // Step 2: Build remote script logic
+    let remoteScript = `
+          #!/bin/bash
+          set -e
+          SRC_DIR="${cleanSourcePath}"
+          TMP_BACKUP_DIR="/tmp/rsync_backup"
+          BACKUP_DATE=$(date +%F_%H-%M-%S)
+          ZIP_NAME="backup_${timestamp}.zip"
+          ZIP_PATH="/tmp/$ZIP_NAME"
+          REMOTE_BACKUP_DIR="${remoteFolder}"
+          LINK_DEST="${TMP_BACKUP_DIR}/backup_last"
+
+          mkdir -p "$TMP_BACKUP_DIR/${timestamp}"
+          `;
+
+    if (incrementalBackup) {
+      remoteScript += `
+        if [ -d "$LINK_DEST" ]; then
+          LINK_OPTION="--link-dest=$LINK_DEST"
+        else
+          LINK_OPTION=""
+        fi
+        `;
+    } else {
+      remoteScript += `LINK_OPTION=""\n`;
+    }
+
+    remoteScript += `
+rsync -a --delete $LINK_OPTION "$SRC_DIR/" "$TMP_BACKUP_DIR/${timestamp}/"
+ln -sfn "$TMP_BACKUP_DIR/${timestamp}" "$LINK_DEST"
+`;
+
+    if (zipBeforeBackup) {
+      remoteScript += `
+cd "$TMP_BACKUP_DIR"
+zip -r "$ZIP_PATH" "${timestamp}"
+sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' "$ZIP_PATH" ${DEST_USER}@${DEST_IP}:${remoteFolder}/
+rm -f "$ZIP_PATH"
+`;
+    } else {
+      remoteScript += `
+sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' "$TMP_BACKUP_DIR/${timestamp}/" ${DEST_USER}@${DEST_IP}:${remoteFolder}/
+`;
+    }
+
+    remoteScript += `
+rm -rf "$TMP_BACKUP_DIR/${timestamp}"
+`;
+
+    // Step 3: Write script and execute remotely
+    const finalCommand = `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} 'bash -s' <<'END_SCRIPT'
+${remoteScript}
+END_SCRIPT`;
 
     ws.send(
-      JSON.stringify({ action: "terminal", output: `$ ${rsyncCommand}\n` })
+      JSON.stringify({ action: "terminal", output: `$ ${finalCommand}\n` })
     );
 
-    const proc = exec(rsyncCommand);
+    const proc = exec(finalCommand);
 
     proc.stdout.on("data", (data) => {
       ws.send(JSON.stringify({ action: "terminal", output: data }));
@@ -110,14 +233,18 @@ function copyFromSourceVPSToLocal(
         ws.send(
           JSON.stringify({
             action: "error",
-            message: `Rsync failed with exit code ${code}`,
+            message: `Backup script failed with exit code ${code}`,
           })
         );
       }
     });
   });
 }
-function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
+
+function retryLatestBackup(
+  { username, password, ipAddress, sourcePath, zipBeforeBackup, incrementalBackup },
+  ws
+) {
   const cleanUsername = sanitizeArg(username);
   const cleanPassword = sanitizeArg(password);
   const cleanIp = sanitizeArg(ipAddress);
@@ -140,10 +267,7 @@ function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
     }
 
     const latestBackup = stdout.trim().split("\n")[0];
-    if (
-      !latestBackup ||
-      !latestBackup.startsWith(`/home/${DEST_USER}/backup_`)
-    ) {
+    if (!latestBackup || !latestBackup.startsWith(`/home/${DEST_USER}/backup_`)) {
       ws.send(
         JSON.stringify({
           action: "error",
@@ -161,13 +285,19 @@ function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
       })
     );
 
-    const rsyncCommand =
-      `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} ` +
-      `"sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${latestBackup}/"`;
+    // Build options
+    const linkDestOption = incrementalBackup ? `--link-dest=${latestBackup}` : "";
+    const tempZip = `/tmp/retry_${Date.now()}.zip`;
 
-    ws.send(
-      JSON.stringify({ action: "terminal", output: `$ ${rsyncCommand}\n` })
-    );
+    let rsyncPart = `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} "rsync -a --delete ${linkDestOption} ${cleanSourcePath}/ ${DEST_USER}@${DEST_IP}:${latestBackup}/"`;
+
+    if (zipBeforeBackup) {
+      rsyncPart = `sshpass -p '${cleanPassword}' ssh -o StrictHostKeyChecking=no ${cleanUsername}@${cleanIp} \"cd ${cleanSourcePath} && zip -r ${tempZip} . && sshpass -p '${DEST_PASSWORD}' rsync -avz -e 'ssh -o StrictHostKeyChecking=no' ${tempZip} ${DEST_USER}@${DEST_IP}:${latestBackup}/ && rm -f ${tempZip}\"`;
+    }
+
+    const rsyncCommand = rsyncPart;
+
+    ws.send(JSON.stringify({ action: "terminal", output: `$ ${rsyncCommand}\n` }));
 
     const proc = exec(rsyncCommand);
 
@@ -199,6 +329,7 @@ function retryLatestBackup({ username, password, ipAddress, sourcePath }, ws) {
     });
   });
 }
+
 
 // Restore all backups sequentially
 function restoreFromBackup({ ipAddress, username, password, targetPath }, ws) {

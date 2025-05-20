@@ -1,3 +1,4 @@
+<!-- Fully Interactive UI with Animated Terminal & Theme Toggle -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -12,251 +13,666 @@
     />
     <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
 
+    <!-- Google Fonts -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
     <style>
       :root {
-        --primary: #4caf50;
-        --bg: #1e1e1e;
-        --card: #2e2e2e;
-        --border: #444;
-        --text: #ffffff;
-        --muted: #bbbbbb;
+        /* Light */
+        --primary: #7c3aed;
+        --accent: #22d3ee;
+        --bg: #f1f5f9;
+        --card: #ffffffee;
+        --border: #cbd5e1;
+        --text: #0f172a;
+        --muted: #475569;
       }
-
-      * {
+      :root.dark {
+        --primary: #8b5cf6;
+        --accent: #22d3ee;
+        --bg: radial-gradient(
+          circle at top left,
+          #0f172a 0%,
+          #1e293b 50%,
+          #0f172a 100%
+        );
+        --card: rgba(30, 41, 59, 0.9);
+        --border: #334155;
+        --text: #f8fafc;
+        --muted: #94a3b8;
+      }
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
       }
-
       body {
         margin: 0;
-        padding: 2vh 1vw;
+        font-family: "Inter", sans-serif;
+        min-height: 100vh;
         background: var(--bg);
-        font-family: "Segoe UI", sans-serif;
         color: var(--text);
         display: flex;
         flex-direction: column;
         align-items: center;
-        min-height: 100vh;
+        gap: 3rem;
+        padding: 5vh 2vw;
+        transition: background 0.4s, color 0.4s;
       }
-
       h1 {
-        color: var(--primary);
-        margin-bottom: 5px;
-        font-size: 2rem;
+        font-size: clamp(2rem, 5vw, 3rem);
+        font-weight: 700;
+        background: linear-gradient(90deg, var(--primary), var(--accent));
+        -webkit-background-clip: text;
+        color: transparent;
+        text-align: center;
       }
-
       h2 {
-        margin: 30px 0 10px;
+        margin: 0 0 1rem;
+        font-size: 1.5rem;
+        font-weight: 600;
         color: var(--primary);
-        font-size: 1.3rem;
         text-align: center;
       }
 
-      #terminal {
-        width: 100%;
-        max-width: 1200px;
-        height: 60vh;
-        background-color: #000;
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-        border-radius: 12px;
-        overflow: hidden;
-        outline: none;
-      }
-
-      .xterm {
-        font-family: "Courier New", Courier, monospace;
-        font-size: 14px;
-      }
-
-      .form-container {
-        margin-top: 10px;
-        width: 100%;
-        max-width: 1000px;
-        background: var(--card);
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      /* Toggle */
+      .toggle {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
         display: flex;
-        flex-wrap: wrap;
-        gap: 15px;
-        justify-content: center;
+        align-items: center;
+        gap: 0.5rem;
+        user-select: none;
+      }
+      .switch {
+        position: relative;
+        width: 50px;
+        height: 26px;
+      }
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #cbd5e1;
+        border-radius: 34px;
+        transition: 0.4s;
+      }
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 4px;
+        bottom: 4px;
+        background: #fff;
+        border-radius: 50%;
+        transition: 0.4s;
+      }
+      input:checked + .slider {
+        background: var(--primary);
+      }
+      input:checked + .slider:before {
+        transform: translateX(24px);
       }
 
-      .form-container input {
-        flex: 1 1 220px;
-        padding: 10px;
-        background: #1b1b1b;
-        color: white;
-        border: 1px solid var(--border);
-        border-radius: 6px;
+      /* Terminal Wrapper with Header */
+      #terminal-wrapper {
+        width: min(95vw, 1200px);
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+        background: var(--card);
+        display: flex;
+        flex-direction: column;
+        user-select: none;
       }
 
-      .form-container input::placeholder {
+      /* Terminal Header mimicking window controls */
+      #terminal-header {
+        display: flex;
+        align-items: center;
+        background: var(--card);
+        padding: 0.4rem 1rem;
+        gap: 0.6rem;
+        border-bottom: 1px solid var(--border);
         color: var(--muted);
+        font-weight: 600;
+        font-size: 0.9rem;
+        font-family: "Inter", sans-serif;
+        height: 36px;
+        flex-shrink: 0;
       }
 
-      .form-container button {
-        padding: 10px 20px;
+      #terminal-header .terminal-control-close,
+      #terminal-header .terminal-control-minimize,
+      #terminal-header .terminal-control-maximize {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: filter 0.3s ease;
+      }
+
+      #terminal-header .terminal-control-close {
+        background-color: #ff5f56;
+      }
+      #terminal-header .terminal-control-minimize {
+        background-color: #ffbd2e;
+      }
+      #terminal-header .terminal-control-maximize {
+        background-color: #27c93f;
+      }
+
+      #terminal-header .terminal-control-close:hover {
+        filter: brightness(1.2);
+      }
+      #terminal-header .terminal-control-minimize:hover {
+        filter: brightness(1.2);
+      }
+      #terminal-header .terminal-control-maximize:hover {
+        filter: brightness(1.2);
+      }
+
+      #terminal-header span.title-text {
+        margin-left: 1rem;
+        user-select: text;
+        flex-grow: 1;
+        text-align: center;
+        font-weight: 700;
+        color: var(--primary);
+      }
+
+      /* Terminal main area */
+      #terminal {
+        height: 50vh;
+        background: #0a0a0a;
+        font-family: "Source Code Pro", monospace, monospace;
+        font-size: 14px;
+        line-height: 1.4;
+        color: #eee;
+        outline: none;
+        position: relative;
+        padding: 1rem;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        border-radius: 0 0 16px 16px;
+        box-sizing: border-box;
+        letter-spacing: 0.03em;
+        user-select: text;
+        scrollbar-width: thin;
+        scrollbar-color: var(--primary) transparent;
+      }
+
+      /* Scrollbar for Webkit browsers */
+      #terminal::-webkit-scrollbar {
+        width: 8px;
+      }
+      #terminal::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #terminal::-webkit-scrollbar-thumb {
+        background-color: var(--primary);
+        border-radius: 20px;
+        border: 2px solid transparent;
+      }
+
+      /* Blinking cursor at the end of last line */
+      #terminal .blinking-cursor {
+        display: inline-block;
+        width: 8px;
+        height: 18px;
+        background-color: var(--accent);
+        animation: blink-cursor 1.1s steps(2, start) infinite;
+        border-radius: 3px;
+        vertical-align: bottom;
+        margin-left: 3px;
+      }
+      @keyframes blink-cursor {
+        0%,
+        50% {
+          opacity: 1;
+        }
+        50.01%,
+        100% {
+          opacity: 0;
+        }
+      }
+
+      /* Colored output text classes */
+      #terminal .term-info {
+        color: var(--accent);
+      }
+      #terminal .term-success {
+        color: #4ade80; /* green-400 */
+      }
+      #terminal .term-warning {
+        color: #facc15; /* yellow-400 */
+      }
+      #terminal .term-error {
+        color: #ef4444; /* red-500 */
+      }
+
+      /* Timestamp prefix styling */
+      #terminal .timestamp {
+        color: var(--muted);
+        margin-right: 0.7em;
+        font-family: "Inter", sans-serif;
+        font-size: 0.85rem;
+        user-select: none;
+      }
+
+      /* Terminal input line container */
+      #terminal-command-line {
+        display: flex;
+        align-items: center;
+        font-family: "Source Code Pro", monospace;
+        color: var(--accent);
+        padding: 0.5rem 1rem;
+        background: #111;
+        border-top: 1px solid var(--border);
+        border-radius: 0 0 16px 16px;
+        user-select: text;
+      }
+
+      #terminal-command-line .prompt {
+        margin-right: 0.5rem;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      #terminal-command-line input#terminal-cmd-input {
+        flex-grow: 1;
+        background: transparent;
+        border: none;
+        color: #eee;
+        font-size: 1rem;
+        font-family: "Source Code Pro", monospace;
+        outline: none;
+        caret-color: var(--accent);
+        padding: 0.15rem 0;
+      }
+
+      /* Terminal controls (clear, save) */
+      #terminal-controls {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+        padding: 0.5rem 1rem;
+        background: var(--card);
+        border-radius: 0 0 0 0;
+        user-select: none;
+      }
+
+      #terminal-controls button#terminal-clear-btn,
+      #terminal-controls button#terminal-save-btn {
         background: var(--primary);
         color: white;
         border: none;
-        border-radius: 6px;
+        padding: 0.3rem 1rem;
+        border-radius: 8px;
         cursor: pointer;
-        transition: background 0.3s;
+        font-weight: 600;
+        font-family: "Inter", sans-serif;
+        transition: background-color 0.3s ease;
       }
 
-      .form-container button:hover {
-        background: #43a047;
+      #terminal-controls button#terminal-clear-btn:hover,
+      #terminal-controls button#terminal-save-btn:hover {
+        background: var(--accent);
       }
 
-      #progress-bar-container {
-        width: 100%;
-        max-width: 1000px;
-        margin-top: 20px;
+      /* Activity spinner */
+      #terminal .spinner {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border: 3px solid var(--accent);
+        border-top: 3px solid transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        vertical-align: middle;
+        margin-left: 8px;
+      }
+      @keyframes spin {
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Responsive tweaks */
+      @media (max-width: 768px) {
+        #terminal-wrapper {
+          width: 95vw;
+        }
+        #terminal {
+          height: 38vh;
+        }
+        #terminal-header span.title-text {
+          font-size: 0.85rem;
+        }
+        #terminal-controls {
+          padding: 0.4rem 1rem;
+        }
+      }
+
+      /* Card */
+      .card {
+        width: min(95vw, 1100px);
         background: var(--card);
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+        padding: 2rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1.4rem 1.8rem;
+        backdrop-filter: blur(6px);
       }
 
+      /* Field */
+      .field {
+        position: relative;
+        width: 100%;
+      }
+      .input {
+        width: 100%;
+        padding: 1.1rem 1rem 0.6rem;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: transparent;
+        color: var(--text);
+        font-size: 1rem;
+        transition: border 0.25s;
+      }
+      .label {
+        position: absolute;
+        top: 0.9rem;
+        left: 1rem;
+        font-size: 1rem;
+        color: var(--muted);
+        pointer-events: none;
+        transition: transform 0.25s, font-size 0.25s, color 0.25s;
+      }
+      .input:focus + .label,
+      .input:not(:placeholder-shown) + .label {
+        transform: translateY(-1.2rem);
+        font-size: 0.78rem;
+        color: var(--accent);
+      }
+      .input:focus {
+        border-color: var(--accent);
+        outline: none;
+      }
+
+      /* Checkbox */
+      .checkbox-wrapper {
+        grid-column: 1/-1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem 2rem;
+      }
+      .checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+      .checkbox input {
+        accent-color: var(--primary);
+        width: 20px;
+        height: 20px;
+      }
+
+      /* Buttons */
+      .btn-group {
+        grid-column: 1/-1;
+        display: flex;
+        justify-content: center;
+        gap: 1.4rem;
+        flex-wrap: wrap;
+      }
+      .btn {
+        position: relative;
+        overflow: hidden;
+        padding: 0.85rem 2rem;
+        background: var(--primary);
+        border: none;
+        border-radius: 14px;
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.25s, box-shadow 0.25s;
+      }
+      .btn:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 25px rgba(124, 58, 237, 0.45);
+      }
+      .btn:active {
+        transform: translateY(0);
+      }
+      .btn::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 5px;
+        height: 5px;
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 50%;
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0;
+        transition: transform 0.6s, opacity 0.6s;
+      }
+      .btn:active::after {
+        transform: translate(-50%, -50%) scale(30);
+        opacity: 0;
+        transition: 0s;
+      }
+
+      /* Progress */
+      #progress-wrapper {
+        width: min(95vw, 1100px);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+        padding: 2rem 1.5rem;
+        text-align: center;
+      }
       #progress-bar {
         width: 100%;
+        height: 28px;
         background: var(--border);
-        border-radius: 10px;
-        height: 20px;
+        border-radius: 16px;
         overflow: hidden;
-        margin-bottom: 10px;
       }
-
       #progress {
         height: 100%;
-        background: linear-gradient(to right, #66bb6a, #43a047);
         width: 0%;
-        transition: width 0.3s ease-in-out;
+        background: linear-gradient(90deg, var(--accent), var(--primary));
+        transition: width 0.5s ease;
       }
-
       #status-message {
-        animation: fadeIn 0.3s ease-in;
-        color: var(--muted);
+        margin-top: 0.9rem;
         font-size: 0.95rem;
-      }
-
-      @keyframes fadeIn {
-        from {
-          transform: translateY(-10px);
-          opacity: 0;
-        }
-        to {
-          transform: translateY(0);
-          opacity: 1;
-        }
+        color: var(--muted);
       }
 
       @media (max-width: 768px) {
-        .form-container {
-          flex-direction: column;
-          align-items: stretch;
-        }
-
         #terminal {
-          height: 40vh;
+          height: 38vh;
         }
       }
     </style>
   </head>
-
-  <body>
-    <h1>VPS Backup & Restore Utility</h1>
-
-    <!-- Terminal Output -->
-    <h2>Live Terminal Output</h2>
-    <div id="terminal" tabindex="0" aria-label="Terminal Output Area"></div>
-
-    <!-- Backup Section -->
-    <h2>📦 Backup VPS Files</h2>
-    <div class="form-container">
-      <input
-        type="text"
-        id="username"
-        placeholder="Source VPS Username"
-        autocomplete="off"
-        aria-label="Source VPS Username"
-      />
-      <input
-        type="password"
-        id="password"
-        placeholder="Source VPS Password"
-        autocomplete="off"
-        aria-label="Source VPS Password"
-      />
-      <input
-        type="text"
-        id="ipAddress"
-        placeholder="Source VPS IP Address"
-        autocomplete="off"
-        aria-label="Source VPS IP Address"
-      />
-      <input
-        type="text"
-        id="sourcePath"
-        placeholder="Source Folder Path"
-        autocomplete="off"
-        aria-label="Source Folder Path"
-      />
-      <button onclick="startCopy()" aria-label="Start File Copy">
-        Start Backup
-      </button>
-      <button onclick="retryBackup()" aria-label="Retry File Copy">
-        Retry Backup
-      </button>
-    </div>
-    <!-- Restore Section -->
-    <h2>♻️ Restore from Backup</h2>
-    <div class="form-container">
-      <input
-        type="text"
-        id="restoreIp"
-        placeholder="Target Server IP Address"
-        autocomplete="off"
-        aria-label="Target Server IP Address"
-      />
-      <input
-        type="text"
-        id="restoreUser"
-        placeholder="Target Server Username"
-        autocomplete="off"
-        aria-label="Target Server Username"
-      />
-      <input
-        type="password"
-        id="restorePassword"
-        placeholder="Target Server Password"
-        autocomplete="off"
-        aria-label="Target Server Password"
-      />
-      <input
-        type="text"
-        id="restorePath"
-        placeholder="Restoration Path"
-        autocomplete="off"
-        aria-label="Restoration Path"
-      />
-      <button onclick="startRestore()" aria-label="Start Restoration">
-        Start Restore
-      </button>
-      <button onclick="retryRestore()" aria-label="Retry Restoration">
-        Retry Restore
-      </button>
+  <body class="dark">
+    <!-- Theme Toggle -->
+    <div class="toggle" title="Toggle Light / Dark">
+      <span>🌙</span>
+      <label class="switch">
+        <input type="checkbox" id="themeToggle" checked />
+        <span class="slider"></span>
+      </label>
+      <span>☀️</span>
     </div>
 
-    <!-- Progress Section -->
-    <h2>📊 Progress Monitor</h2>
-    <div id="progress-bar-container">
-      <div id="progress-bar">
-        <div id="progress"></div>
+    <section>
+      <div id="terminal-wrapper">
+        <div id="terminal-header">
+          <div class="terminal-control-close"></div>
+          <div class="terminal-control-minimize"></div>
+          <div class="terminal-control-maximize"></div>
+          <span>Terminal - VPS Backup & Restore</span>
+        </div>
+        <div id="terminal" tabindex="0" aria-label="Terminal Output Area"></div>
+        <div id="terminal-controls">
+          <button
+            id="terminal-clear-btn"
+            aria-label="Clear Terminal"
+            onclick="clearTerminal()"
+          >
+            Clear
+          </button>
+          
+        </div>
       </div>
-      <div id="status-message">Awaiting operation...</div>
-    </div>
+    </section>
+
+    <!-- Backup -->
+    <section>
+      <h2>📦 Backup VPS Files</h2>
+      <div class="card">
+        <div class="field">
+          <input class="input" id="username" placeholder=" " /><label
+            class="label"
+            >Source VPS Username</label
+          >
+        </div>
+        <div class="field">
+          <input
+            class="input"
+            id="password"
+            type="password"
+            placeholder=" "
+          /><label class="label">Source VPS Password</label>
+        </div>
+        <div class="field">
+          <input class="input" id="ipAddress" placeholder=" " /><label
+            class="label"
+            >Source VPS IP Address</label
+          >
+        </div>
+        <div class="field">
+          <input class="input" id="sourcePath" placeholder=" " /><label
+            class="label"
+            >Source Folder Path</label
+          >
+        </div>
+
+        <div class="checkbox-wrapper">
+          <label class="checkbox"
+            ><input type="checkbox" id="zipOption" /> Compress into ZIP before
+            backup</label
+          >
+          <label class="checkbox"
+            ><input type="checkbox" id="incrementalOption" /> Enable Incremental
+            Backup</label
+          >
+        </div>
+
+        <div class="btn-group">
+          <button
+            class="btn"
+            onclick="startCopy()"
+            aria-label="Start File Copy"
+          >
+            Start Backup
+          </button>
+          <button
+            class="btn"
+            onclick="retryBackup()"
+            aria-label="Retry File Copy"
+          >
+            Retry Backup
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Restore -->
+    <section>
+      <h2>♻️ Restore from Backup</h2>
+      <div class="card">
+        <div class="field">
+          <input class="input" id="restoreIp" placeholder=" " /><label
+            class="label"
+            >Target Server IP Address</label
+          >
+        </div>
+        <div class="field">
+          <input class="input" id="restoreUser" placeholder=" " /><label
+            class="label"
+            >Target Server Username</label
+          >
+        </div>
+        <div class="field">
+          <input
+            class="input"
+            id="restorePassword"
+            type="password"
+            placeholder=" "
+          /><label class="label">Target Server Password</label>
+        </div>
+        <div class="field">
+          <input class="input" id="restorePath" placeholder=" " /><label
+            class="label"
+            >Restoration Path</label
+          >
+        </div>
+
+        <div class="btn-group">
+          <button
+            class="btn"
+            onclick="startRestore()"
+            aria-label="Start Restoration"
+          >
+            Start Restore
+          </button>
+          <button
+            class="btn"
+            onclick="retryRestore()"
+            aria-label="Retry Restoration"
+          >
+            Retry Restore
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Progress -->
+    <section>
+      <h2>📊 Progress Monitor</h2>
+      <div id="progress-wrapper">
+        <div id="progress-bar"><div id="progress"></div></div>
+        <div id="status-message">Awaiting operation...</div>
+      </div>
+    </section>
+
     <script src="client.js"></script>
   </body>
 </html>
